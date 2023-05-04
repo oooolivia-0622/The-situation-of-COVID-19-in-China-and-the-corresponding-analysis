@@ -1,0 +1,673 @@
+---
+title: "The situation of COVID-19 in China and the corresponding analysis"
+author: "Li Wenxuan"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Set the work path
+```{r echo = TRUE}
+# Please change the workpath into the file contains dataset
+path <- 'C:/Users/(UserName)/Desktop/DataVisualization/Dataset_Visualization/'
+```
+
+## Import the packages we need
+```{r echo = TRUE, warning = FALSE}
+# Use tha packages: pacman to import the packages we need
+# For packages that are not downloaded, pacman will download and load them
+# For installed packages, pacman will load them directly
+library(pacman)
+library(barRacer)
+pacman::p_load(choroplethr, corrplot, dplyr, DT, devtools,
+               geosphere, gganimate, ggthemes, ggdark, ggplot2, 
+               ggpubr, gifski, lubridate, magrittr, openair, paletteer, 
+               plotly, RColorBrewer, readr, reshape2, rgdal,
+               scales, tidyverse, tidyr, viridisLite, viridis)
+
+# Avoid the language setting (Chinese) affect the plot
+Sys.setlocale("LC_TIME", "English")
+```
+
+## Task 1: The overall situation of the COVID-19 outbreak in the world and China
+1. Read the world map
+```{r}
+# read the world's map from choroplethrMaps
+data(country.map, package = "choroplethrMaps")
+#View(country.map)
+```
+
+2. Read the data of total death
+```{r}
+# read the data of world
+World_data <- read.csv(paste0(path, "total_death_of_the_world.csv"),
+                       stringsAsFactors = FALSE,
+                       fileEncoding = "UTF-8")
+
+# View(World_data)
+```
+
+3. Rename some countries or regions
+```{r}
+# rename some countries in the data to fit the map of the world
+World_data <- World_data %>%
+  mutate(sovereignt = recode(sovereignt,
+                             "US" = "United States of America",
+                             "Congo (Kinshasa)" = "Democratic Republic of the Congo",
+                             "Congo (Brazzaville)" = "Republic of Congo",
+                             "Korea, South" = "South Korea",
+                             "Tanzania" = "United Republic of Tanzania",
+                             "Serbia" = "Republic of Serbia",
+                             "Burma" = "Myanmar"))
+
+# set some limits and classes of data
+World_data$Class <- cut(World_data$Deaths,
+                        breaks = c(0, 100, 1000, 10000, 
+                                   100000, 1000000, 10000000),
+                        labels = c('[0 to 100]', '[100 to 1000]', 
+                                   '[1000 to 10000]', '[10000 to 100000]',
+                                   '[100000 to 1000000]', 
+                                   '[1000000 to 10000000]'),
+                        ordered_result = TRUE,
+                        include.lowest = TRUE)
+
+#View(World_data)
+```
+
+4. Draw the picture of total deaths in the world
+```{r}
+# merge the data and the map
+World_data_temp <- merge(country.map, World_data, by = "sovereignt")
+
+# sort the new map data to keep the picture in normal
+World_data_temp <- World_data_temp[order(World_data_temp$id, 
+                                         World_data_temp$order),]
+
+#View(World_data_temp)
+
+# draw the picture of the world
+World <- ggplot() + 
+  geom_polygon(data = World_data_temp,
+               aes(x = long, y = lat, group = group, 
+                   region = sovereignt, fill = Class, label = Deaths),
+               color = "black") +
+  #scale_fill_manual(values=c("green", "yellow", "orange", "red")) +
+  scale_fill_brewer(palette="OrRd")
+
+ggplotly(World)
+```
+
+5. Draw the picture of death in china
+```{r}
+# Read OGR vector maps into spatial objects
+china_map <- readOGR(dsn = paste0(path, "CHN_adm"),
+                     layer = "bou2_4p",
+                     encoding = "GBK",
+                     verbose = FALSE)
+
+mydata <- china_map@data["NAME"]
+mydata$id <- 0:924
+
+mydata[mydata$id == 898, "NAME"] <- " "
+
+mymapdata <- fortify(china_map)
+
+mymapdata$id <- as.numeric(mymapdata$id)
+mymapdata <- merge(mymapdata, mydata, all.x = TRUE)
+mymapdata <- mymapdata %>% rename(region = NAME)
+
+# read chinese data
+China_data <- read.csv(paste0(path,"data_of_each_provinces_in_China.csv"),
+                    fileEncoding = "GBK")
+
+China_data$Death_Class <- cut(China_data$Deaths,
+                       breaks = c(0, 10, 100, 1000, 10000),
+                       labels = c('[0 to 10]', '[10 to 100]', '[100 to 1000]', '[1,000 to 10,000]'),
+                       ordered_result = TRUE,
+                       include.lowest = TRUE)
+
+China_data$Confirmed_Class <- cut(China_data$Confirmed,
+                       breaks = c(0, 100, 1000, 10000, 100000, 1000000),
+                       labels = c('[0 to 100]', '[100 to 1000]', '[1000 to 10000]', '[10000 to 100000]',
+                                  '[100000 to 1000000]'),
+                       ordered_result = TRUE,
+                       include.lowest = TRUE)
+
+China_data_temp <- select(China_data, -c(jd, wd))
+China_data_temp <- China_data_temp %>% rename(region = Province)
+
+# merge the data and map and sort them
+mymapdata_temp <- merge(mymapdata, China_data_temp, by = "region")
+mymapdata_temp <- mymapdata_temp[order(mymapdata_temp$id, mymapdata_temp$order),]
+
+#View(mymapdata_temp)
+
+# draw the picture of china
+China1 <- ggplot() + 
+  geom_polygon(data = mymapdata_temp,
+               aes(x = long, y = lat, group = group, region = region, fill = Confirmed_Class, 
+                   label = Confirmed),
+               color = "black") +
+  #scale_fill_manual(values=c("green", "yellow", "orange", "red")) +
+  scale_fill_brewer(palette="OrRd")
+
+ggplotly(China1)
+```
+
+```{r}
+China2 <- ggplot() + 
+  geom_polygon(data = mymapdata_temp,
+               aes(x = long, y = lat, group = group, region = region, fill = Death_Class, label = Deaths),
+               color = "black") +
+  #scale_fill_manual(values=c("green", "yellow", "orange", "red")) +
+  scale_fill_brewer(palette="OrRd")
+
+ggplotly(China2)
+```
+
+## Task 2: Showcase the situation of the COVID-19 outbreak in China
+```{r}
+ts_conf<-read.csv(paste0(path,"Cumulative_Confirmed_China.csv"),
+                  fileEncoding = "UTF-8-BOM")
+ts_death<-read.csv(paste0(path,"Cumulative_Death_China.csv"),
+                   fileEncoding = "UTF-8-BOM")
+names(ts_conf)
+```
+
+```{r}
+#prepare for top data(confirm)
+top_1<-t(ts_conf[831,-1])
+top_1<-as.data.frame(top_1)
+colnames(top_1)="conf"
+top_1<-arrange(top_1,desc(conf))
+province<-rownames(top_1)
+top_1<-cbind(province,top_1)
+```
+
+```{r}
+#prepare for top data(death)
+top_2<-t(ts_death[831,-1])
+top_2<-as.data.frame(top_2)
+colnames(top_2)="death"
+top_2<-arrange(top_2,desc(death))
+province<-rownames(top_2)
+top_2<-cbind(province,top_2)
+```
+
+```{r}
+#plot of conf
+top_1[1:6,] %>%
+  ggplot(aes(x = reorder(`province`,conf), y = conf )) +
+  geom_bar(stat = "identity", fill  = "deeppink", width = 0.8) +
+  theme_economist() +
+  scale_y_continuous(breaks = seq(0, 1500000, by = 150000), labels = comma) +
+  coord_flip() +
+  labs(x = "", y = "", title = "Top 6 (the Most Confirmed Cases)") +
+  theme(axis.text.x = element_text(angle = 45)) +
+  theme(axis.title = element_text(size = 14, colour = "black"),
+        axis.text.y = element_text(size = 11, face = "bold"))
+```
+
+```{r}
+#plot of death
+top_2[1:6,] %>%
+  ggplot(aes(x = reorder(`province`,death), y = death )) +
+  geom_bar(stat = "identity", fill  = "deepskyblue", width = 0.8) +
+  theme_economist() +
+  scale_y_continuous(breaks = seq(0, 10000, by = 1000), labels = comma) +
+  coord_flip() +
+  labs(x = "", y = "", title = "Top 6 (the Most Death Cases)") +
+  theme(axis.text.x = element_text(angle = 45)) +
+  theme(axis.title = element_text(size = 14, colour = "black"),
+        axis.text.y = element_text(size = 11, face = "bold"))
+```
+
+```{r}
+#translate the format of data(add province)
+ts_conf2<-gather(ts_conf,province,conf,Anhui,Beijing,Chongqing,Fujian,Gansu,Guangdong,
+                 Guangxi,Guizhou,Hainan,Hebei,Heilongjiang,Henan,Hong_Kong,Hubei,
+                 Hunan,Inner_Mongolia,Jiangsu,Jiangxi,Jilin,Liaoning,Macau,Ningxia,
+                 Qinghai,Shaanxi,Shandong,Shanghai,Shanxi,Sichuan,Tianjin,Tibet,Taiwan,
+                 Xinjiang,Yunnan,Zhejiang)
+ts_death2<-gather(ts_death,province,death,Anhui,Beijing,Chongqing,Fujian,Gansu,Guangdong,
+                 Guangxi,Guizhou,Hainan,Hebei,Heilongjiang,Henan,Hong_Kong,Hubei,
+                 Hunan,Inner_Mongolia,Jiangsu,Jiangxi,Jilin,Liaoning,Macau,Ningxia,
+                 Qinghai,Shaanxi,Shandong,Shanghai,Shanxi,Sichuan,Tianjin,Tibet,Taiwan,
+                 Xinjiang,Yunnan,Zhejiang)
+ts_comb<-cbind(ts_conf2,ts_death2$death)
+ts_comb$Date <- as.Date(ts_comb$Date)
+colnames(ts_comb)[1]<-"date"
+colnames(ts_comb)[4]<-"death"
+```
+
+```{r}
+#combine all data in 6 important city
+data_top6 <- ts_comb %>%
+  select('province', date, conf, death) %>%
+  filter(`province` %in% c("Hong.Kong", "Hubei", "Shanghai", "Taiwan",
+                                 "Jilin","Guangdong")) %>%
+  group_by(`province`, date) %>%
+  summarise(conf  = sum(conf),
+            death = sum(death)) %>%
+  mutate("New_Cases" = conf - lag(conf, 1),
+         "Mortality_Rate" = death / conf) %>%
+  mutate("New_Cases" = round(New_Cases, 3),
+         "Mortality_Rate" = round(Mortality_Rate, 3))
+data_top6$New_Cases[is.na(data_top6$New_Cases)] <- 0
+data_top6$Mortality_Rate[is.nan(data_top6$Mortality_Rate)] <- 0
+```
+
+```{r}
+data_top6 %>%
+  ggplot(aes(x = date, y = Mortality_Rate, fill = province)) +
+  geom_bar(stat = "identity",alpha = 0.8) +
+  facet_wrap(~ province) +
+  theme_minimal() +
+  labs(x = "", y = "Mortality Rate") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        axis.title.y = element_text(face = "bold", size = 10))
+```
+
+```{r}
+data_top6 %>%
+  filter(date>"2022-04-01"&(province=="Jilin"|province=="Shanghai"))%>%
+  ggplot(aes(x = date, y = New_Cases, fill = province)) +
+  geom_bar(stat = "identity",alpha = 0.8) +
+  facet_wrap(~ province) +
+  theme_minimal() +
+  labs(x = "", y = "New Cases") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        axis.title.y = element_text(face = "bold", size = 10))
+```
+
+
+```{r}
+data_top6 %>%
+  filter(date >="2022-04-01") %>%
+  select('province', date, conf) %>%
+  rename(Names = province) %>%
+  gather(Status, Cases, -c("date", "Names")) %>%
+  ggplot(aes(x = date, y = Cases, fill = as.factor(Names) ) ) +
+  geom_bar(stat = "identity", color = "black")+
+  scale_fill_brewer(palette = "Pastel1") +
+  facet_grid(.~Status) +
+  labs(x = "", y= "", fill = "") +
+  theme_economist_white() +
+  theme(legend.position = "bottom", legend.direction = "horizontal",
+        legend.text =element_text(face = "bold", size = 8))
+```
+
+```{r}
+#prepare for data of shanghai and jilin
+new1<-cbind(ts_conf$Date,ts_conf$Shanghai,ts_conf$Jilin,ts_death$Shanghai,ts_death$Jilin)
+colnames(new1)<-c("date","conf_S","conf_J","death_S","death_J")
+new1<-as.data.frame(new1)
+new1$date <- as.Date(new1$date)
+new1<-na.omit(new1)
+```
+
+```{r}
+new1$conf_S<-as.numeric(new1$conf_S)
+new1$conf_J<-as.numeric(new1$conf_J)
+new1$death_S<-as.numeric(new1$death_S)
+new1$death_J<-as.numeric(new1$death_J)
+#shanghai
+new1 <- new1 %>%
+  group_by(date, conf_S) %>%
+  mutate(Mortality_rate_S = (death_S)/(conf_S)) %>%
+  ungroup()
+#jilin
+new1 <- new1 %>%
+  group_by(date, conf_J) %>%
+  mutate(Mortality_rate_J = (death_J)/(conf_J)) %>%
+  ungroup()
+#change nan into 0
+new1[is.na(new1)]<-0
+```
+
+```{r}
+barchart_1 <-new1 %>%
+  select(date,Mortality_rate_S,Mortality_rate_J) %>%
+  gather(status.ratio, ratio, -date ) %>%
+  ggplot(aes(x = date, y = ratio, fill = status.ratio)) +
+  geom_bar(stat = "identity", position = "dodge") +
+    theme(plot.margin = margin(0, 0, 0, 0, "pt"),
+          panel.background = element_rect(fill = "White"),
+          legend.position = "bottom",
+          axis.title = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks = element_blank()) +
+    ggtitle("The Mortality_rate")
+
+ggplotly(barchart_1) %>%
+layout(legend = list(orientation = 'h'))
+```
+
+
+## Task 3: Comparison of the epidemic situation in Shanghai City and Jilin Province in 2022  
+### View the changes in the cumulative number of confirmed/Deaths cases in main places in 2022
+```{r}
+# 1. Cumulative confirmed cases
+cumulative_confirmed <- read.csv(paste0(path,'Cumulative_Confirmed_China.csv'))
+cumulative_confirmed$Date <- as.Date(cumulative_confirmed$Date)
+cumulative_confirmed <- melt(cumulative_confirmed,
+                             id = 'Date')
+cumulative_confirmed <- cumulative_confirmed %>%
+  filter(variable == 'Jilin' |
+         variable == 'Shanghai' |
+         variable == 'Hong_Kong' |
+         variable == 'Taiwan') %>%
+  filter(Date >= as.Date('2022-01-01') & 
+         Date < as.Date('2022-05-01'))
+cumulative_confirmed$Date <- ymd(cumulative_confirmed$Date)
+
+barracer_confirmed <- bar_chart_race(cumulative_confirmed, variable, value, Date, 
+                                     title ="Changes in the Cumulative Confirmed Cases in 2022")
+
+# Save the Gif
+gganimate::anim_save('Changes in Cumulative Confirmed Cases in 2022.gif')
+
+barracer_confirmed
+```
+
+```{r}
+# 2. Cumulative deaths cases
+cumulative_deaths <- read.csv(paste0(path,'Cumulative_Death_China.csv'))
+cumulative_deaths$Date <- as.Date(cumulative_deaths$Date)
+cumulative_deaths <- melt(cumulative_deaths,
+                          id = 'Date')
+cumulative_deaths <- cumulative_deaths %>%
+  filter(variable == 'Jilin' |
+         variable == 'Shanghai' |
+         variable == 'Hong_Kong' |
+         variable == 'Taiwan') %>%
+  filter(Date >= as.Date('2022-01-01') & 
+         Date < as.Date('2022-05-01'))
+cumulative_deaths$Date <- ymd(cumulative_deaths$Date)
+
+barracer_deaths <- bar_chart_race(cumulative_deaths, variable, value, Date, 
+                                  title ="Changes in the Cumulative Death Cases in 2022")
+
+# Save the Gif
+gganimate::anim_save('Changes in Cumulative Death Cases in 2022.gif')
+
+barracer_deaths
+```
+
+### Comparison of cumulative confirmed cases and cumulative deaths between the two places
+```{r echo = TRUE}
+# Import the data we need in this task
+cumulative_data <- read.csv(paste0(path,"Cumulative_data_each_provinceOrState.csv"),
+                            encoding = "UTF-8")
+
+# Generate the cumulative data of Shanghai City and Jilin Province
+cumulative <- cumulative_data %>%
+  filter(Province_State == 'Jilin' |
+         Province_State == 'Shanghai')
+print(cumulative)
+
+# Pie Chart of Cumulative Confirmed Data
+cumulative_confirmed <- cumulative %>%
+  mutate(prop = round(Confirmed * 100 / sum(Confirmed), 1),
+         lab.ypos = cumsum(prop) - 0.5*prop)
+cumulative_confirmed$label <- paste0(cumulative_confirmed$Province_State, '\n',
+                                     'Cases: ',
+                                     cumulative_confirmed$Confirmed,'\n',
+                                     'Ratio: ',
+                                     round(cumulative_confirmed$prop,2), '%')
+
+pie_confirmed <- ggplot(cumulative_confirmed, 
+                        aes(x = ' ', y = prop,
+                            fill = Province_State))+
+  geom_col(fill = c('#FAA43AFF','#5DA5DAFF'),
+           direction = -1) +
+  geom_text(aes(y = lab.ypos, label = label),
+            size = 3,
+            color = "black") +
+  coord_polar(theta = "y")+
+  scale_color_paletteer_d("basetheme::minimal")+
+  theme_void() +
+  theme(legend.position = "FALSE")
+
+# Pie Chart of Cumulative Deaths Data
+cumulative_deaths <- cumulative %>%
+  mutate(prop = Deaths * 100 / sum(Deaths),
+         lab.ypos = cumsum(prop) - 0.5 * prop )
+cumulative_deaths$label <- paste0(cumulative_deaths$Province_State, '\n',
+                                  'Cases: ',
+                                  cumulative_deaths$Deaths,'\n',
+                                  'Ratio: ',
+                                  round(cumulative_deaths$prop,2), '%')
+pie_deaths <- ggplot(cumulative_deaths,
+                     aes(x = ' ', y = prop,
+                         fill = Province_State))+
+  geom_col(fill = c('#FAA43AFF','#5DA5DAFF'),
+           direction = -1) +
+  geom_text(aes(y = lab.ypos, label = label),
+            size = 3,
+            color = "black") +
+  coord_polar(theta = "y")+
+  theme_void() +
+  theme(legend.position = "FALSE")
+
+# Bar Chart of Cumulative Confirmed Data
+cumulative_melt <- melt(cumulative, 
+                             id = c('Province_State','Country_Region'))
+
+cumulative_melt_comfirmed<- cumulative_melt %>%
+  filter(variable == 'Confirmed')
+
+barplot_confirmed <- ggplot(cumulative_melt_comfirmed,
+                            aes(x = Province_State, 
+                                y = value))+
+  geom_col(position = 'dodge',
+           fill = c('#FAA43AFF','#5DA5DAFF'),
+           width = 0.5)+
+  geom_text(aes(label = value),
+            size = 3,
+            color = 'black',
+            vjust = -0.25) +
+  scale_y_continuous(limits = c(0, 80000))+
+  labs(x = 'Province / City',
+       y = 'Cases',
+       title = "Cumulative Confirmed Cases",
+       subtitle = 'Shanghai City vs. Jilin Province')+
+  theme_bw()
+
+# Bar Chart of Cumulative Deaths Data
+cumulative_melt_deaths<- cumulative_melt %>%
+  filter(variable == 'Deaths')
+
+barplot_deaths <- ggplot(cumulative_melt_deaths,
+                         aes(x = Province_State, 
+                             y = value))+
+  geom_col(position = 'dodge',
+           fill = c('#FAA43AFF','#5DA5DAFF'),
+           width = 0.5)+
+  geom_text(aes(label = value),
+            size = 3,
+            color = 'black',
+            vjust = -0.25) +
+  scale_y_continuous(limits = c(0, 600))+
+  labs(x = 'Province / City',
+       y = 'Cases',
+       title = "Cumulative Deaths Cases",
+       subtitle = 'Shanghai City vs. Jilin Province')+
+  theme_bw()
+
+# Use ggarrange to combine these plots
+plot2 <- ggarrange(barplot_confirmed,pie_confirmed, 
+                   barplot_deaths, pie_deaths,
+                   ncol = 2, nrow = 2,
+                   widths = 1,
+                   heights = 3)
+
+# Show the result of plot1
+plot2
+```
+
+### Comparison of daily confirmed cases and daily deaths between the two places in 2022
+```{r echo = TRUE}
+# Plot2: The distribution of 4 time series
+# 1. Cumulative confirmed cases
+cumulative_confirmed <- read.csv(paste0(path,'Cumulative_Confirmed_China.csv'))
+cumulative_confirmed$Date <- as.Date(cumulative_confirmed$Date)
+cumulative_confirmed <- melt(cumulative_confirmed,
+                             id = 'Date')
+cumulative_confirmed <- cumulative_confirmed %>%
+  filter(variable == 'Jilin' |
+         variable == 'Shanghai') %>%
+  filter(Date >= as.Date('2022-01-01') & 
+         Date < as.Date('2022-05-01'))
+
+ts_cumulative_confirmed <- ggplot(cumulative_confirmed,
+                                  aes(x = Date,
+                                      y = value,
+                                      color = variable,
+                                      group = variable))+
+  geom_line(size = 1,linetype = 2) +
+  scale_x_date(date_labels="%d", 
+               date_breaks="week",
+               expand=c(0,0))+
+  scale_y_continuous(limits = c(0,60000),
+                     expand  = c(0,0))+
+  facet_grid(~month(Date,label=T),
+             space="free_x",                
+             scales="free_x",           
+             switch="y") + 
+  scale_fill_brewer(palette = "Set1")+
+  labs(x = ' ',
+       y = 'Cases',
+       title = "Cumulative Confirmed Cases in 2022",
+       subtitle = 'Shanghai City vs. Jilin Province')+
+  theme_bw()+
+  theme(legend.title=element_blank())
+
+# 2. Daily Confirmed Cases
+daily_confirmed <- read.csv(paste0(path,'Daily_Confirmed_China.csv'))
+daily_confirmed$Date <- as.Date(daily_confirmed$Date)
+daily_confirmed <- melt(daily_confirmed,
+                        id = 'Date')
+daily_confirmed <- daily_confirmed %>%
+  filter(variable == 'Jilin' |
+         variable == 'Shanghai') %>%
+  filter(Date >= as.Date('2022-01-01') & 
+         Date < as.Date('2022-05-01'))
+
+ts_daily_confirmed <- ggplot(daily_confirmed,
+                             aes(x = Date,
+                                 y = value,
+                                 color = variable,
+                                 group = variable))+
+  geom_line(size = 1,linetype = 1) +
+  geom_ribbon(aes(ymin = 0, ymax =  value, 
+                  group = variable,fill = variable),
+              alpha = 0.5)+
+
+  scale_x_date(date_labels="%d", 
+               date_breaks="week",
+               expand=c(0,0))+
+  scale_y_continuous(limits = c(0,6000),
+                     expand  = c(0,0))+
+  facet_grid(~month(Date,label=T),
+             space="free_x",                
+             scales="free_x",           
+             switch="y") + 
+  scale_fill_brewer(palette = "Set1")+
+  labs(x = ' ',
+       y = 'Cases',
+       title = "Daily Confirmed Cases in 2022",
+       subtitle = 'Shanghai City vs. Jilin Province')+
+  theme_bw()+
+  theme(legend.title=element_blank())
+
+# 3. Cumulative Death Cases
+cumulative_death <- read.csv(paste0(path,'Cumulative_Death_China.csv'))
+cumulative_death$Date <- as.Date(cumulative_death$Date)
+cumulative_death <- melt(cumulative_death,
+                        id = 'Date')
+cumulative_death <- cumulative_death %>%
+  filter(variable == 'Jilin' |
+         variable == 'Shanghai') %>%
+  filter(Date >= as.Date('2022-01-01') & 
+         Date < as.Date('2022-05-01'))
+
+ts_cumulative_death <- ggplot(cumulative_death,
+                              aes(x = Date,
+                                  y = value,
+                                  color = variable,
+                                  group = variable))+
+  geom_line(size = 1,linetype = 2) +
+  scale_x_date(date_labels="%d", 
+               date_breaks="week",
+               expand=c(0,0))+
+  scale_y_continuous(limits = c(0,400),
+                     expand  = c(0,0))+
+  facet_grid(~month(Date,label=T),
+             space="free_x",                
+             scales="free_x",           
+             switch="y") + 
+  scale_fill_brewer(palette = "Set1")+
+  labs(x = ' ',
+       y = 'Cases',
+       title = "Cumulative Death Cases in 2022",
+       subtitle = 'Shanghai City vs. Jilin Province')+
+  theme_bw()+
+  theme(legend.title=element_blank())
+
+# 4. Daily Death Cases
+daily_death <- read.csv(paste0(path,'Daily_Death_China.csv'))
+daily_death$Date <- as.Date(daily_death$Date)
+daily_death <- melt(daily_death,
+                    id = 'Date')
+daily_death <- daily_death %>%
+  filter(variable == 'Jilin' |
+         variable == 'Shanghai') %>%
+  filter(Date >= as.Date('2022-01-01') & 
+         Date < as.Date('2022-05-01'))
+
+ts_daily_death <- ggplot(daily_death,
+                         aes(x = Date,
+                             y = value,
+                             color = variable,
+                             group = variable))+
+  geom_line(size = 1,linetype = 1) +
+  geom_ribbon(aes(ymin = 0, ymax =  value, 
+                  group = variable,fill = variable),
+              alpha = 0.5)+
+
+  scale_x_date(date_labels="%d", 
+               date_breaks="week",
+               expand=c(0,0))+
+  scale_y_continuous(limits = c(0,60),
+                     expand  = c(0,0))+
+  facet_grid(~month(Date,label=T),
+             space="free_x",                
+             scales="free_x",           
+             switch="y") + 
+  scale_fill_brewer(palette = "Set1")+
+  labs(x = ' ',
+       y = 'Cases',
+       title = "Daily Death Cases in 2022",
+       subtitle = 'Shanghai City vs. Jilin Province')+
+  theme_bw()+
+  theme(legend.title=element_blank())
+
+# Use ggarrange to combine there plot
+plot2 <- ggarrange(ts_cumulative_confirmed,ts_daily_confirmed, 
+                   ts_cumulative_death, ts_daily_death,
+                   ncol = 2, nrow = 2,
+                   widths = 3,
+                   heights = 1.5,
+                   common.legend = T,
+                   legend = 'bottom')
+
+plot2
+```
